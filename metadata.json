@@ -1,0 +1,6 @@
+{
+  "name": "ContaSync AI & Supabase - Finanzas Empresa y Personales",
+  "description": "Base de datos y gestión contable mes a mes para empresa (jurídica) y finanzas personales, con escáner inteligente de facturas por IA, resguardo en Supabase Storage y reportes descargables para el contador.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
