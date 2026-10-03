@@ -42,6 +42,7 @@ import {
 import {
   getSupabaseConfig,
   getSupabaseClient,
+  saveSupabaseConfig,
   fetchTransactionsFromSupabase,
 } from './services/supabaseService';
 import { Navbar } from './components/Navbar';
@@ -59,6 +60,8 @@ import { PersonsManagerModal } from './components/PersonsManagerModal';
 import { BranchesManagerModal } from './components/BranchesManagerModal';
 import { CompanyProfileModal } from './components/CompanyProfileModal';
 import { BcvRateModal } from './components/BcvRateModal';
+import { MobileActionsHub } from './components/MobileActionsHub';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { getBcvRate } from './services/currencyService';
 
 export default function App() {
@@ -84,8 +87,67 @@ export default function App() {
   const [viewingReceipt, setViewingReceipt] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  // Cargar datos iniciales
+  // Modo de visualización: Teléfono o PC
+  const [viewMode, setViewMode] = useState<'pc' | 'phone'>(() => {
+    try {
+      const saved = localStorage.getItem('contasync_view_mode');
+      if (saved === 'phone' || saved === 'pc') return saved;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) return 'phone';
+    } catch (e) {}
+    return 'phone';
+  });
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleToggleViewMode = () => {
+    setViewMode((prev) => {
+      const next = prev === 'phone' ? 'pc' : 'phone';
+      try {
+        localStorage.setItem('contasync_view_mode', next);
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await syncWithSupabase();
+      setSyncResult({ success: true, message: res.message });
+      setTransactions(getStoredTransactions());
+      setCompanyProfile(getStoredCompanyProfile());
+      setTimeout(() => setSyncResult(null), 6000);
+    } catch (err: any) {
+      setSyncResult({ success: false, message: err.message || 'Error en la sincronización' });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Cargar datos iniciales y auto-detectar enlace compartido de Supabase para vincular el celular
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const sharedUrl = params.get('s_url') || params.get('supabase_url');
+      const sharedKey = params.get('s_key') || params.get('supabase_key');
+      if (sharedUrl && sharedKey) {
+        const newConfig = {
+          url: decodeURIComponent(sharedUrl.trim()),
+          anonKey: decodeURIComponent(sharedKey.trim()),
+          bucketName: 'recibos-facturas',
+          isConnected: true,
+          lastChecked: new Date().toISOString(),
+        };
+        saveSupabaseConfig(newConfig);
+        setIsSupabaseConnected(true);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {
+      console.warn('Error leyendo parámetros de vinculación:', e);
+    }
+
     const loaded = getStoredTransactions();
     setTransactions(loaded);
 
@@ -96,6 +158,7 @@ export default function App() {
       syncWithSupabase().then((res) => {
         if (res.syncedCount > 0) {
           setTransactions(getStoredTransactions());
+          setCompanyProfile(getStoredCompanyProfile());
         }
       });
     }
@@ -229,10 +292,39 @@ export default function App() {
         bcvRate={bcvRate}
         onOpenBcvModal={() => setIsBcvModalOpen(true)}
         onOpenCompanyProfile={() => setIsCompanyProfileOpen(true)}
+        viewMode={viewMode}
+        onToggleViewMode={handleToggleViewMode}
+        onSyncNow={handleSyncNow}
+        isSyncing={isSyncing}
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 pb-24 md:pb-8">
+        {/* Centro de Opciones y Sincronización Inmediata */}
+        <MobileActionsHub
+          currentEntity={currentEntity}
+          onSelectEntity={setCurrentEntity}
+          onOpenScanner={() => setIsScannerOpen(true)}
+          onOpenManual={() => {
+            setEditingTransaction(null);
+            setIsManualOpen(true);
+          }}
+          onOpenAccountantPortal={() => setIsAccountantOpen(true)}
+          onOpenSupabaseSettings={() => setIsSupabaseOpen(true)}
+          onOpenCompanyProfile={() => setIsCompanyProfileOpen(true)}
+          onOpenBranches={() => setIsBranchesModalOpen(true)}
+          onOpenPersons={() => setIsPersonsModalOpen(true)}
+          onOpenBcvModal={() => setIsBcvModalOpen(true)}
+          bcvRate={bcvRate}
+          companyProfile={companyProfile}
+          isSupabaseConnected={isSupabaseConnected}
+          onSyncNow={handleSyncNow}
+          isSyncing={isSyncing}
+          syncResult={syncResult}
+          viewMode={viewMode}
+          onToggleViewMode={handleToggleViewMode}
+        />
+
         {/* Banner de Entidad Activa */}
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl bg-white border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3">
@@ -551,6 +643,21 @@ export default function App() {
         onTransactionsRevalued={() => {
           setTransactions([...getStoredTransactions()]);
         }}
+      />
+
+      {/* Barra de Navegación Flotante Inferior para Teléfonos */}
+      <MobileBottomNav
+        onOpenScanner={() => setIsScannerOpen(true)}
+        onOpenManual={() => {
+          setEditingTransaction(null);
+          setIsManualOpen(true);
+        }}
+        onOpenAccountantPortal={() => setIsAccountantOpen(true)}
+        onOpenSupabaseSettings={() => setIsSupabaseOpen(true)}
+        onSyncNow={handleSyncNow}
+        isSyncing={isSyncing}
+        isSupabaseConnected={isSupabaseConnected}
+        onOpenCompanyProfile={() => setIsCompanyProfileOpen(true)}
       />
     </div>
   );

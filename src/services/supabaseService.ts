@@ -543,19 +543,37 @@ CREATE INDEX IF NOT EXISTS idx_transacciones_category ON finanzas_transacciones(
 -- Habilitar Row Level Security (RLS)
 ALTER TABLE finanzas_transacciones ENABLE ROW LEVEL SECURITY;
 
--- Política de lectura y escritura permisiva para Anon / Authenticated
-CREATE POLICY "Permitir lectura para todos" 
-  ON finanzas_transacciones FOR SELECT USING (true);
+-- Políticas de lectura, inserción, actualización y borrado permisivas para la app
+DROP POLICY IF EXISTS "Permitir lectura para todos" ON finanzas_transacciones;
+DROP POLICY IF EXISTS "Permitir insercion y actualizacion para todos" ON finanzas_transacciones;
+DROP POLICY IF EXISTS "Permitir todo para todos" ON finanzas_transacciones;
 
-CREATE POLICY "Permitir insercion y actualizacion para todos" 
-  ON finanzas_transacciones FOR ALL USING (true);
+CREATE POLICY "Permitir todo para todos" 
+  ON finanzas_transacciones FOR ALL 
+  USING (true)
+  WITH CHECK (true);
 
--- 2. Crear Storage Bucket para recibos ultralivianos
+-- 2. Habilitar Realtime para sincronización instantánea entre PC y Teléfono
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'finanzas_transacciones'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE finanzas_transacciones;
+  END IF;
+END $$;
+
+-- 3. Crear Storage Bucket para recibos ultralivianos
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('${bucketName}', '${bucketName}', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Políticas de Storage para subir y visualizar comprobantes
+DROP POLICY IF EXISTS "Permitir ver recibos públicos" ON storage.objects;
+DROP POLICY IF EXISTS "Permitir subir comprobantes" ON storage.objects;
+DROP POLICY IF EXISTS "Permitir actualizar comprobantes" ON storage.objects;
+
 CREATE POLICY "Permitir ver recibos públicos" 
   ON storage.objects FOR SELECT 
   USING (bucket_id = '${bucketName}');

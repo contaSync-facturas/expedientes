@@ -12,6 +12,8 @@ import {
   Globe,
   RefreshCw,
   FolderLock,
+  Smartphone,
+  Share2,
 } from 'lucide-react';
 import { SupabaseConfig } from '../types/finance';
 import {
@@ -43,6 +45,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedPhoneLink, setCopiedPhoneLink] = useState(false);
 
   if (!isOpen) return null;
 
@@ -251,6 +254,47 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
                 <span className="text-[11px] text-slate-400 mt-1 block">
                   Por defecto: <code className="bg-slate-100 px-1 py-0.5 rounded">recibos-facturas</code> (creado con el script SQL de la siguiente pestaña)
                 </span>
+              </div>
+
+              {/* Vincular teléfono en 1 clic */}
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-950">
+                      Vincular Teléfono con 1 Clic (Sin escribir contraseñas)
+                    </h4>
+                    <p className="text-[11px] text-emerald-700">
+                      Copia este enlace directo y ábrelo en tu teléfono (o envíatelo por WhatsApp). Tu teléfono se conectará a la misma nube automáticamente.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const origin = window.location.origin + window.location.pathname;
+                    const shareableUrl = `${origin}?s_url=${encodeURIComponent(url.trim())}&s_key=${encodeURIComponent(anonKey.trim())}`;
+                    navigator.clipboard.writeText(shareableUrl);
+                    setCopiedPhoneLink(true);
+                    setTimeout(() => setCopiedPhoneLink(false), 3000);
+                  }}
+                  disabled={!url || !anonKey}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+                >
+                  {copiedPhoneLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-white" />
+                      <span>¡Enlace Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-4 h-4" />
+                      <span>Copiar Enlace para Móvil</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
