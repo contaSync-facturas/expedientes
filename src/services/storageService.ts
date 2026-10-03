@@ -11,6 +11,10 @@ import {
 import {
   fetchTransactionsFromSupabase,
   saveTransactionToSupabase,
+  deleteTransactionFromSupabase,
+  saveCompanyProfileToSupabase,
+  saveBranchesToSupabase,
+  savePersonsToSupabase,
   getSupabaseClient,
 } from './supabaseService';
 import {
@@ -327,9 +331,15 @@ export function getStoredPersons(): Person[] {
   return DEFAULT_PERSONS;
 }
 
-export function saveStoredPersons(persons: Person[]): void {
+export function saveStoredPersons(persons: Person[], syncToCloud = true): void {
   try {
     localStorage.setItem(STORAGE_KEY_PERSONS, JSON.stringify(persons));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('contasync_persons_updated', { detail: persons }));
+    }
+    if (syncToCloud && getSupabaseClient()) {
+      savePersonsToSupabase(persons);
+    }
   } catch (e) {
     console.error('Error guardando personas:', e);
   }
@@ -370,9 +380,15 @@ export function getStoredBranches(): CompanyBranch[] {
   return DEFAULT_BRANCHES;
 }
 
-export function saveStoredBranches(branches: CompanyBranch[]): void {
+export function saveStoredBranches(branches: CompanyBranch[], syncToCloud = true): void {
   try {
     localStorage.setItem(STORAGE_KEY_BRANCHES, JSON.stringify(branches));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('contasync_branches_updated', { detail: branches }));
+    }
+    if (syncToCloud && getSupabaseClient()) {
+      saveBranchesToSupabase(branches);
+    }
   } catch (e) {
     console.error('Error guardando sedes de la empresa:', e);
   }
@@ -416,9 +432,15 @@ export function getStoredCompanyProfile(): CompanyProfile {
   return DEFAULT_COMPANY_PROFILE;
 }
 
-export function saveStoredCompanyProfile(profile: CompanyProfile): void {
+export function saveStoredCompanyProfile(profile: CompanyProfile, syncToCloud = true): void {
   try {
     localStorage.setItem(STORAGE_KEY_COMPANY_PROFILE, JSON.stringify(profile));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('contasync_company_profile_updated', { detail: profile }));
+    }
+    if (syncToCloud && getSupabaseClient()) {
+      saveCompanyProfileToSupabase(profile);
+    }
   } catch (e) {
     console.error('Error guardando perfil de la empresa:', e);
   }
@@ -592,7 +614,9 @@ export function getStoredTransactions(): Transaction[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((t) => normalizeTransactionDualCurrency(t));
+        return parsed
+          .filter((t) => !t.id?.startsWith('__config_') && t.category !== '__CONFIG__')
+          .map((t) => normalizeTransactionDualCurrency(t));
       }
     }
   } catch (err) {
@@ -610,7 +634,10 @@ export function getStoredTransactions(): Transaction[] {
 
 export function saveStoredTransactions(transactions: Transaction[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(transactions));
+    const cleanList = transactions.filter(
+      (t) => !t.id?.startsWith('__config_') && t.category !== '__CONFIG__'
+    );
+    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(cleanList));
   } catch (err) {
     console.error('Error guardando en localStorage:', err);
   }
@@ -652,6 +679,10 @@ export async function deleteTransaction(id: string): Promise<void> {
   const current = getStoredTransactions();
   const filtered = current.filter((t) => t.id !== id);
   saveStoredTransactions(filtered);
+
+  if (getSupabaseClient()) {
+    deleteTransactionFromSupabase(id);
+  }
 }
 
 export function calculateMonthSummary(
@@ -762,6 +793,21 @@ export async function syncWithSupabase(): Promise<{ syncedCount: number; message
   }
 
   try {
+    // 1. Sincronizar datos de la empresa, sedes y personas con la nube
+    const localProfile = getStoredCompanyProfile();
+    if (localProfile) {
+      saveCompanyProfileToSupabase(localProfile);
+    }
+    const localBranches = getStoredBranches();
+    if (localBranches && localBranches.length > 0) {
+      saveBranchesToSupabase(localBranches);
+    }
+    const localPersons = getStoredPersons();
+    if (localPersons && localPersons.length > 0) {
+      savePersonsToSupabase(localPersons);
+    }
+
+    // 2. Sincronizar transacciones contables
     const remote = await fetchTransactionsFromSupabase();
     const local = getStoredTransactions();
 
@@ -774,7 +820,7 @@ export async function syncWithSupabase(): Promise<{ syncedCount: number; message
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       saveStoredTransactions(merged);
-      return { syncedCount: merged.length, message: `Sincronizados ${merged.length} registros con Supabase.` };
+      return { syncedCount: merged.length, message: `Sincronizados ${merged.length} registros y datos de empresa con Supabase.` };
     } else {
       let count = 0;
       for (const t of local) {

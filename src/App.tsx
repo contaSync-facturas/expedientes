@@ -27,6 +27,7 @@ import {
 import { Transaction, EntityType, MonthlyBudget, BudgetStatus, CompanyProfile } from './types/finance';
 import {
   getStoredTransactions,
+  saveStoredTransactions,
   addTransaction,
   updateTransaction,
   deleteTransaction,
@@ -38,7 +39,11 @@ import {
   calculateBudgetStatus,
   getStoredCompanyProfile,
 } from './services/storageService';
-import { getSupabaseConfig } from './services/supabaseService';
+import {
+  getSupabaseConfig,
+  getSupabaseClient,
+  fetchTransactionsFromSupabase,
+} from './services/supabaseService';
 import { Navbar } from './components/Navbar';
 import { MonthPicker } from './components/MonthPicker';
 import { StatsOverview } from './components/StatsOverview';
@@ -94,7 +99,78 @@ export default function App() {
         }
       });
     }
+
+    const handleProfileUpdate = (e: any) => {
+      if (e.detail) {
+        setCompanyProfile(e.detail);
+      } else {
+        setCompanyProfile(getStoredCompanyProfile());
+      }
+    };
+
+    window.addEventListener('contasync_company_profile_updated', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('contasync_company_profile_updated', handleProfileUpdate);
+    };
   }, []);
+
+  // Sincronización automática entre PC y Teléfono (al cambiar de pestaña o en tiempo real)
+  useEffect(() => {
+    const handleSync = async () => {
+      const cfg = getSupabaseConfig();
+      if (cfg.url && cfg.anonKey) {
+        const res = await syncWithSupabase();
+        if (res.syncedCount > 0) {
+          setTransactions(getStoredTransactions());
+        }
+      }
+    };
+
+    const handleFocus = () => {
+      handleSync();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleSync();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Suscripción Realtime en Supabase para reflejar cambios instantáneos entre PC y teléfono
+    let channel: any = null;
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        channel = client
+          .channel('finanzas_realtime_channel')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'finanzas_transacciones' },
+            async () => {
+              const remote = await fetchTransactionsFromSupabase();
+              if (remote && remote.length > 0) {
+                saveStoredTransactions(remote);
+                setTransactions(remote);
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn('Realtime channel info:', err);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (channel && client) {
+        client.removeChannel(channel);
+      }
+    };
+  }, [isSupabaseConnected]);
 
   // Actualizar presupuesto al cambiar el mes
   useEffect(() => {

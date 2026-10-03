@@ -124,18 +124,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onOpenSupabaseSettings}
-            className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
               isSupabaseConnected
                 ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
-            title="Configurar Supabase y ver script SQL"
+            title="Sincronización en la Nube (PC & Teléfono)"
           >
             <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{isSupabaseConnected ? 'Supabase Activo' : 'Supabase & Nube'}</span>
+            <span className="hidden md:inline">{isSupabaseConnected ? 'Nube Activa' : 'Nube'}</span>
             <span
               className={`w-2 h-2 rounded-full ${
-                isSupabaseConnected ? 'bg-emerald-500' : 'bg-amber-400'
+                isSupabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
               }`}
             ></span>
           </button>

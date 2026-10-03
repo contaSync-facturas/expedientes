@@ -1,7 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { SupabaseConfig, Transaction } from '../types/finance';
+import { SupabaseConfig, Transaction, CompanyProfile, CompanyBranch, Person } from '../types/finance';
 
 const STORAGE_KEY_CONFIG = 'contasync_supabase_config';
+export const CONFIG_ROW_COMPANY_PROFILE = '__config_company_profile__';
+export const CONFIG_ROW_BRANCHES = '__config_company_branches__';
+export const CONFIG_ROW_PERSONS = '__config_persons__';
 
 const DEFAULT_CONFIG: SupabaseConfig = {
   url: import.meta.env.VITE_SUPABASE_URL || '',
@@ -161,6 +164,22 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<boolea
   if (!client) return false;
 
   try {
+    // Almacenamos metadata extendida (documentType, branch, exemptAmount, assignedPerson, etc.)
+    // dentro de line_items con un flag seguro para compatibilidad total de esquema
+    const originalLineItems = Array.isArray(tx.lineItems) ? tx.lineItems.filter((it: any) => !it?.__isMeta) : [];
+    const lineItemsWithMeta = [
+      ...originalLineItems,
+      {
+        __isMeta: true,
+        documentType: tx.documentType || 'factura_fiscal',
+        branch: tx.branch || null,
+        exemptAmount: tx.exemptAmount || 0,
+        assignedPerson: tx.assignedPerson || null,
+        referenceNumber: tx.referenceNumber || null,
+        exchangeRateBcv: tx.exchangeRateBcv || null,
+      },
+    ];
+
     const row = {
       id: tx.id,
       entity: tx.entity,
@@ -183,7 +202,7 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<boolea
       is_deductible: tx.isDeductible,
       status: tx.status,
       payment_method: tx.paymentMethod,
-      line_items: tx.lineItems || [],
+      line_items: lineItemsWithMeta,
       created_at: tx.createdAt,
       updated_at: new Date().toISOString(),
     };
@@ -196,6 +215,152 @@ export async function saveTransactionToSupabase(tx: Transaction): Promise<boolea
     return true;
   } catch (err) {
     console.error('Error guardando en Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Elimina una transacción de la tabla finanzas_transacciones en Supabase
+ */
+export async function deleteTransactionFromSupabase(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('finanzas_transacciones').delete().eq('id', id);
+    if (error) {
+      console.error('Error eliminando en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error eliminando de Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Guarda el perfil de la empresa en Supabase
+ */
+export async function saveCompanyProfileToSupabase(profile: CompanyProfile): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const row = {
+      id: CONFIG_ROW_COMPANY_PROFILE,
+      entity: 'empresa',
+      type: 'gasto',
+      date: '2000-01-01',
+      supplier: 'SISTEMA_CONFIG_EMPRESA',
+      category: '__CONFIG__',
+      subtotal: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      retention_amount: 0,
+      total: 0,
+      currency: 'USD',
+      description: JSON.stringify(profile),
+      line_items: [{ __config: 'company_profile', data: profile }],
+      is_deductible: false,
+      status: 'pagado',
+      payment_method: 'transferencia',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await client.from('finanzas_transacciones').upsert(row);
+    if (error) {
+      console.warn('Error guardando perfil de empresa en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error guardando perfil en Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Guarda las sedes y sucursales en Supabase
+ */
+export async function saveBranchesToSupabase(branches: CompanyBranch[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const row = {
+      id: CONFIG_ROW_BRANCHES,
+      entity: 'empresa',
+      type: 'gasto',
+      date: '2000-01-01',
+      supplier: 'SISTEMA_CONFIG_SEDES',
+      category: '__CONFIG__',
+      subtotal: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      retention_amount: 0,
+      total: 0,
+      currency: 'USD',
+      description: JSON.stringify(branches),
+      line_items: [{ __config: 'branches', data: branches }],
+      is_deductible: false,
+      status: 'pagado',
+      payment_method: 'transferencia',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await client.from('finanzas_transacciones').upsert(row);
+    if (error) {
+      console.warn('Error guardando sedes en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error guardando sedes en Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Guarda las personas de gastos personales en Supabase
+ */
+export async function savePersonsToSupabase(persons: Person[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const row = {
+      id: CONFIG_ROW_PERSONS,
+      entity: 'personal',
+      type: 'gasto',
+      date: '2000-01-01',
+      supplier: 'SISTEMA_CONFIG_PERSONAS',
+      category: '__CONFIG__',
+      subtotal: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      retention_amount: 0,
+      total: 0,
+      currency: 'USD',
+      description: JSON.stringify(persons),
+      line_items: [{ __config: 'persons', data: persons }],
+      is_deductible: false,
+      status: 'pagado',
+      payment_method: 'transferencia',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await client.from('finanzas_transacciones').upsert(row);
+    if (error) {
+      console.warn('Error guardando personas en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error guardando personas en Supabase:', err);
     return false;
   }
 }
@@ -220,32 +385,113 @@ export async function fetchTransactionsFromSupabase(): Promise<Transaction[] | n
 
     if (!data) return [];
 
-    return data.map((row: any) => ({
-      id: row.id,
-      entity: row.entity,
-      type: row.type,
-      date: row.date,
-      supplier: row.supplier,
-      taxId: row.tax_id,
-      invoiceNumber: row.invoice_number,
-      category: row.category,
-      subtotal: Number(row.subtotal) || 0,
-      taxRate: Number(row.tax_rate) || 0,
-      taxAmount: Number(row.tax_amount) || 0,
-      retentionAmount: Number(row.retention_amount) || 0,
-      total: Number(row.total) || 0,
-      currency: row.currency || 'USD',
-      description: row.description || '',
-      receiptUrl: row.receipt_url,
-      receiptStoragePath: row.receipt_storage_path,
-      receiptSizeKb: row.receipt_size_kb,
-      isDeductible: Boolean(row.is_deductible),
-      status: row.status || 'pagado',
-      paymentMethod: row.payment_method || 'transferencia',
-      lineItems: row.line_items || [],
-      syncedWithSupabase: true,
-      createdAt: row.created_at || new Date().toISOString(),
-    }));
+    const realRows: any[] = [];
+
+    // Procesar filas de configuración para sincronizar automáticamente perfil, sedes y personas
+    data.forEach((row: any) => {
+      if (
+        row.id === CONFIG_ROW_COMPANY_PROFILE ||
+        (row.category === '__CONFIG__' && row.supplier === 'SISTEMA_CONFIG_EMPRESA')
+      ) {
+        try {
+          const rawItems = row.line_items || [];
+          const configItem = Array.isArray(rawItems)
+            ? rawItems.find((it: any) => it?.__config === 'company_profile')
+            : null;
+          const parsedProfile = configItem?.data || (row.description ? JSON.parse(row.description) : null);
+          if (parsedProfile && parsedProfile.name && parsedProfile.taxId) {
+            localStorage.setItem('contasync_company_profile_v1', JSON.stringify(parsedProfile));
+            window.dispatchEvent(
+              new CustomEvent('contasync_company_profile_updated', { detail: parsedProfile })
+            );
+          }
+        } catch (e) {
+          console.warn('Error procesando perfil de empresa remoto:', e);
+        }
+      } else if (
+        row.id === CONFIG_ROW_BRANCHES ||
+        (row.category === '__CONFIG__' && row.supplier === 'SISTEMA_CONFIG_SEDES')
+      ) {
+        try {
+          const rawItems = row.line_items || [];
+          const configItem = Array.isArray(rawItems)
+            ? rawItems.find((it: any) => it?.__config === 'branches')
+            : null;
+          const parsedBranches = configItem?.data || (row.description ? JSON.parse(row.description) : null);
+          if (Array.isArray(parsedBranches) && parsedBranches.length > 0) {
+            localStorage.setItem('contasync_company_branches_v2', JSON.stringify(parsedBranches));
+            window.dispatchEvent(
+              new CustomEvent('contasync_branches_updated', { detail: parsedBranches })
+            );
+          }
+        } catch (e) {
+          console.warn('Error procesando sedes remotas:', e);
+        }
+      } else if (
+        row.id === CONFIG_ROW_PERSONS ||
+        (row.category === '__CONFIG__' && row.supplier === 'SISTEMA_CONFIG_PERSONAS')
+      ) {
+        try {
+          const rawItems = row.line_items || [];
+          const configItem = Array.isArray(rawItems)
+            ? rawItems.find((it: any) => it?.__config === 'persons')
+            : null;
+          const parsedPersons = configItem?.data || (row.description ? JSON.parse(row.description) : null);
+          if (Array.isArray(parsedPersons) && parsedPersons.length > 0) {
+            localStorage.setItem('contasync_persons_v1', JSON.stringify(parsedPersons));
+            window.dispatchEvent(
+              new CustomEvent('contasync_persons_updated', { detail: parsedPersons })
+            );
+          }
+        } catch (e) {
+          console.warn('Error procesando personas remotas:', e);
+        }
+      } else if (!row.id?.startsWith('__config_') && row.category !== '__CONFIG__') {
+        realRows.push(row);
+      }
+    });
+
+    return realRows.map((row: any) => {
+      const rawItems = row.line_items || [];
+      const metaItem = Array.isArray(rawItems) ? rawItems.find((it: any) => it?.__isMeta) : null;
+      const cleanItems = Array.isArray(rawItems) ? rawItems.filter((it: any) => !it?.__isMeta) : [];
+
+      return {
+        id: row.id,
+        entity: row.entity,
+        type: row.type,
+        documentType: metaItem?.documentType || row.document_type || 'factura_fiscal',
+        branch: metaItem?.branch || row.branch || undefined,
+        date: row.date,
+        supplier: row.supplier,
+        taxId: row.tax_id,
+        invoiceNumber: row.invoice_number,
+        referenceNumber: metaItem?.referenceNumber || row.reference_number || undefined,
+        category: row.category,
+        subtotal: Number(row.subtotal) || 0,
+        taxRate: Number(row.tax_rate) || 0,
+        taxAmount: Number(row.tax_amount) || 0,
+        exemptAmount:
+          metaItem?.exemptAmount !== undefined
+            ? Number(metaItem.exemptAmount)
+            : Number(row.exempt_amount) || 0,
+        retentionAmount: Number(row.retention_amount) || 0,
+        total: Number(row.total) || 0,
+        currency: row.currency || 'USD',
+        description: row.description || '',
+        receiptUrl: row.receipt_url,
+        receiptStoragePath: row.receipt_storage_path,
+        receiptSizeKb: row.receipt_size_kb,
+        isDeductible: Boolean(row.is_deductible),
+        status: row.status || 'pagado',
+        paymentMethod: row.payment_method || 'transferencia',
+        assignedPerson: metaItem?.assignedPerson || row.assigned_person || undefined,
+        exchangeRateBcv: metaItem?.exchangeRateBcv || row.exchange_rate_bcv || undefined,
+        lineItems: cleanItems,
+        syncedWithSupabase: true,
+        createdAt: row.created_at || new Date().toISOString(),
+      };
+    });
   } catch (err) {
     console.error('Error obteniendo registros de Supabase:', err);
     return null;

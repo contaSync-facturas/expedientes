@@ -79,25 +79,35 @@ export const AccountantPortalModal: React.FC<AccountantPortalModalProps> = ({
   const [dossierSuccess, setDossierSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
+    const refreshProfile = () => {
       const p = getStoredCompanyProfile();
       setCompanyProfile(p);
       setCompanyName(p.name);
       setCompanyTaxId(p.taxId);
       setCompanyAddress(p.address);
+    };
+
+    if (isOpen) {
+      refreshProfile();
     }
+
+    window.addEventListener('contasync_company_profile_updated', refreshProfile);
+    return () => {
+      window.removeEventListener('contasync_company_profile_updated', refreshProfile);
+    };
   }, [isOpen]);
 
   // Lista de sedes disponibles
   const availableBranches = useMemo(() => {
     const set = new Set<string>();
-    set.add('Lubricantes Asiáticos (Principal)');
-    set.add('Lubricantes Asiáticos (Sucursal)');
     const stored = getStoredBranches();
     stored.forEach((b) => set.add(b.name));
     transactions.forEach((t) => {
       if (t.entity === 'empresa' && t.branch) set.add(t.branch);
     });
+    if (set.size === 0) {
+      set.add('Sede Principal');
+    }
     return Array.from(set);
   }, [transactions]);
 
