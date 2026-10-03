@@ -1,6 +1,15 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL"
+
+[[redirects]]
+  from = "/api/scan-receipt"
+  to = "/.netlify/functions/scan-receipt"
+  status = 200
 
 [[redirects]]
   from = "/*"
